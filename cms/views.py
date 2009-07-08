@@ -2,23 +2,29 @@ from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.core.urlresolvers import reverse
 from cms import settings
-from cms.models import Page
 from cms.utils import auto_render, get_template_from_request, get_language_from_request
 from django.db.models.query_utils import Q
 from cms.appresolver import applications_page_check
 from django.contrib.sites.models import Site
+from cms.utils.moderator import get_page_model
 
-def _get_current_page(path, lang, queryset):
+def get_current_page(path, lang, queryset, home_slug, home_tree_id):
     """Helper for getting current page from path depending on language
     
     returns: (Page, None) or (None, path_to_alternative language)
     """
     try:
-        if settings.CMS_FLAT_URLS:
-            return queryset.filter(Q(title_set__slug=path,
-                                                     title_set__language=lang)).distinct().select_related()[0]
+        if home_slug:
+            queryset = queryset.exclude(Q(title_set__path=home_slug)&Q(tree_id=home_tree_id))
+            home_slug += "/"
+            title_q = Q(title_set__path=path)|(Q(title_set__path=home_slug + path)&Q(tree_id=home_tree_id))
+            
         else:
-            page = queryset.filter(title_set__path=path).distinct().select_related()[0]
+            title_q = Q(title_set__slug=path)
+        if settings.CMS_FLAT_URLS:
+            return queryset.filter(title_q & Q(title_set__language=lang)).distinct().select_related()[0], None
+        else:
+            page = queryset.filter(title_q).distinct().select_related()[0]
             if page:
                 langs = page.get_languages() 
                 if lang in langs:
@@ -33,13 +39,18 @@ def _get_current_page(path, lang, queryset):
         return None, None
 
 def details(request, page_id=None, slug=None, template_name=settings.CMS_TEMPLATES[0][0], no404=False):
+    # get the right model
+    PageModel = get_page_model(request)
+    
     lang = get_language_from_request(request)
     site = Site.objects.get_current()
     if 'preview' in request.GET.keys():
-        pages = Page.objects.all()
+        pages = PageModel.objects.all()
     else:
-        pages = Page.objects.published()
+        pages = PageModel.objects.published()
+    
     root_pages = pages.filter(parent__isnull=True).order_by("tree_id")
+    
     current_page, response = None, None
     if root_pages:
         if page_id:
@@ -52,7 +63,13 @@ def details(request, page_id=None, slug=None, template_name=settings.CMS_TEMPLAT
                     path = slug.replace(reverse('pages-root'), '', 1)
                 else:
                     path = slug
-                current_page, alternative = _get_current_page(path, lang, pages)
+                if root_pages:
+                    home_tree_id = root_pages[0].tree_id
+                    home_slug = root_pages[0].get_slug(language=lang)
+                else:
+                    home_slug = ""
+                    home_tree_id = None
+                current_page, alternative = get_current_page(path, lang, pages, home_slug, home_tree_id)
                 if settings.CMS_APPLICATIONS_URLS:
                     # check if it should'nt point to some application, if yes,
                     # change current page if required
@@ -70,12 +87,13 @@ def details(request, page_id=None, slug=None, template_name=settings.CMS_TEMPLAT
         template_name = get_template_from_request(request, current_page)
     elif not no404:
         raise Http404("CMS: No page found for site %s" % unicode(site.name))
+    
     if current_page:  
-        has_page_permissions = current_page.has_page_permission(request)
+        has_change_permissions = current_page.has_change_permission(request)
         request._current_page_cache = current_page
         if current_page.get_redirect(language=lang):
             return HttpResponseRedirect(current_page.get_redirect(language=lang))
     else:
-        has_page_permissions = False
+        has_change_permissions = False
     return template_name, locals()
 details = auto_render(details)

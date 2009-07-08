@@ -1,7 +1,7 @@
 Installation
 ============
 
-Copy the `cms` and `mptt` folders into your project or add them
+Copy the `cms` and `mptt` and `publisher` folders into your project or add them
 to your Python path.
 
 Apps
@@ -16,11 +16,19 @@ Add the following to your project's `INSTALLED_APPS` setting:
 		'cms.plugins.picture',
 		'cms.plugins.link',
 		'cms.plugins.file',
+		'cms.plugins.snippet',
+		'cms.plugins.googlemap',
 		'mptt',
 		...
+
+		'publisher'
 	)
-    
-Django-cms 2.0 is compatible with [django-reversion](http://code.google.com/p/django-reversion/) for versioning all the page content and its plugins.
+
+Publisher needs to be at the end of the list.
+
+Django-cms 2.0 is compatible with [django-reversion](http://code.google.com/p/django-reversion/) for versioning all the page content and its plugins. Put "reversion" in your INSTALLED\_APPS if you have it installed.
+
+If you don't need all the plugins you can comment them out here.
 
 Middleware
 ----------
@@ -28,11 +36,12 @@ Middleware
 Add the following middleware classes:
 
 	MIDDLEWARE_CLASSES = (
-		...
-		'cms.middleware.CurrentPageMiddleware',
-		'cms.middleware.MultilingualURLMiddleware',
-		...
-	)
+    	...
+    	'cms.middleware.page.CurrentPageMiddleware',
+		'cms.middleware.user.CurrentUserMiddleware',
+    	'cms.middleware.multilingual.MultilingualURLMiddleware',
+    	...
+    	)
     
 If your site is not multilingual you can leave out `'cms.middleware.MutilingualURLMiddleware'`.
 

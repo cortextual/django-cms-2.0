@@ -140,7 +140,6 @@
 
 <h2>Show the breadcrumb navigation of the current page</h2>
 <ul class="breadcrumb">
-	<li><a href="/">home</a></li>
 	{% show_breadcrumb %}
 </ul>
 
@@ -163,7 +162,7 @@
 
 <script type="text/javascript">
     // quick and dirty edit in place example
-    {% if has_page_permissions %}
+    {% if has_change_permissions %}
         $('.placeholder').addClass('placeholder-editable');
     {% endif %}
     $('.placeholder-editable').mouseover(function() {

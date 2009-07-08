@@ -1,9 +1,9 @@
-from django.conf import settings
 from cms.models import CMSPlugin
 from cms.exceptions import SubClassNeededError
 from django.forms.models import ModelForm
 from django.utils.encoding import smart_str
 from django.contrib import admin
+from cms import settings as cms_settings
  
 class CMSPluginBase(admin.ModelAdmin):
     name = ""
@@ -48,9 +48,20 @@ class CMSPluginBase(admin.ModelAdmin):
         context.update({
             'is_popup': True,
             'plugin': self.cms_plugin_instance,
+            'CMS_MEDIA_URL': cms_settings.CMS_MEDIA_URL,
         })
         
         return super(CMSPluginBase, self).render_change_form(request, context, add, change, form_url, obj)
+    
+    def has_add_permission(self, request, *args, **kwargs):
+        """Permission handling change - if user is allowed to change the page
+        he must be also allowed to add/change/delete plugins..
+        
+        Not sure if there will be plugin permission requirement in future, but
+        if, then this must be changed.
+        """
+        return self.cms_plugin_instance.page.has_change_permission(request)
+    has_delete_permission = has_change_permission = has_add_permission
     
     def save_model(self, request, obj, form, change):
         """

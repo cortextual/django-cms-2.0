@@ -1,9 +1,9 @@
-from cms.plugin_pool import plugin_pool
-from cms.plugin_base import CMSPluginBase
 from django.utils.translation import ugettext_lazy as _
 from models import Link
-from cms.plugins.text.forms import TextForm
 from cms.settings import CMS_MEDIA_URL
+from cms.plugin_pool import plugin_pool
+from cms.plugin_base import CMSPluginBase
+
 
 class LinkPlugin(CMSPluginBase):
     model = Link
@@ -18,9 +18,13 @@ class LinkPlugin(CMSPluginBase):
             link = instance.page_link.get_absolute_url()
         else:
             link = ""
-        return {'name':instance.name,
-                'link':link, 
-                'placeholder':placeholder}
+        context.update({
+            'name':instance.name,
+            'link':link, 
+            'placeholder':placeholder,
+            'object':instance
+        })
+        return context 
         
     def icon_src(self, instance):
         return CMS_MEDIA_URL + u"images/plugins/link.png"

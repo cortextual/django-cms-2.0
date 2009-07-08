@@ -11,7 +11,18 @@ class PicturePlugin(CMSPluginBase):
     text_enabled = True
     
     def render(self, context, instance, placeholder):
-        return {'picture':instance, 'placeholder':placeholder}
+        if instance.url:
+            link = instance.url
+        elif instance.page_link:
+            link = instance.page_link.get_absolute_url()
+        else:
+            link = ""
+        context.update({
+            'picture':instance,
+            'link':link, 
+            'placeholder':placeholder
+        })
+        return context 
     
     def icon_src(self, instance):
         # TODO - possibly use 'instance' and provide a thumbnail image

@@ -1,7 +1,7 @@
-from cms.models import Page
 from django.conf import settings
 from cms.settings import CMS_FLAT_URLS
 from django.core.urlresolvers import RegexURLResolver, Resolver404, reverse
+from cms.utils.moderator import get_page_model
 
 def applications_page_check(request, current_page=None, path=None):
     """Tries to find if given path was resolved over application. 
@@ -15,7 +15,8 @@ def applications_page_check(request, current_page=None, path=None):
     try:
         page_id = dynamic_app_regex_url_resolver.resolve_page_id(path+"/")
         # yes, it is application page
-        page = Page.objects.get(id=page_id)
+        PageModel = get_page_model(request)
+        page = PageModel.objects.get(id=page_id)
         # If current page was matched, then we have some override for content
         # from cms, but keep current page. Otherwise return page to which was application assigned.
         return page 
@@ -39,7 +40,10 @@ class PageRegexURLResolver(RegexURLResolver):
                 try:
                     sub_match = pattern.resolve(new_path)
                 except Resolver404, e:
-                    tried.extend([(pattern.regex.pattern + '   ' + t) for t in e.args[0]['tried']])
+                    if 'tried' in e.args[0]:
+                        tried.extend([(pattern.regex.pattern + '   ' + t) for t in e.args[0]['tried']])
+                    elif 'path' in e.args[0]:
+                        tried.extend([(pattern.regex.pattern + '   ' + t) for t in e.args[0]['path']])
                 else:
                     if sub_match:
                         if isinstance(pattern, RegexURLResolver):
@@ -127,8 +131,8 @@ class DynamicURLConfModule(object):
             # probably will be better to make caching per site
             
             self._urlpatterns, included = [], []
-            pages = Page.objects.get_all_pages_with_application()
-            
+            PageModel = get_page_model() #!TODO: this must be solved!!
+            pages = PageModel.objects.get_all_pages_with_application()
             for page in pages:
                 # get all titles with application
                 title_set = page.title_set.filter(application_urls__gt="")

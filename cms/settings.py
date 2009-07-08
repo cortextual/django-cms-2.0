@@ -25,11 +25,16 @@ if CMS_TEMPLATES is None:
 #        "extra_context": {},
 #    },
 #}
-CMS_PLACEHOLDER_CONF = getattr(settings, 'CMS_PLACEHOLDER_CONF', None)
+CMS_PLACEHOLDER_CONF = getattr(settings, 'CMS_PLACEHOLDER_CONF', {})
 
 # Whether to enable permissions.
-CMS_PERMISSION = getattr(settings, 'CMS_PERMISSION', True)
+CMS_PERMISSION = getattr(settings, 'CMS_PERMISSION', False)
 
+# check if is user middleware installed
+if CMS_PERMISSION and not 'cms.middleware.user.CurrentUserMiddleware' in settings.MIDDLEWARE_CLASSES:
+    raise ImproperlyConfigured('CMS Permission system requires cms.middleware.user.CurrentUserMiddleware.\n'
+        'Please put it into your MIDDLEWARE_CLASSES in settings file')
+    
 # Show the publication date field in the admin, allows for future dating
 # Changing this from True to False could cause some weirdness.  If that is required,
 # you should update your database to correct any future dated pages
@@ -62,10 +67,9 @@ CMS_NAVIGATION_EXTENDERS = getattr(settings, 'CMS_NAVIGATION_EXTENDERS', ())
 # )
 CMS_APPLICATIONS_URLS = getattr(settings, 'CMS_APPLICATIONS_URLS', ()) 
 
-
 # Whether a slug should be unique ... must be unique in all languages.
-i18n_installed = not 'cms.middleware.MultilingualURLMiddleware' in settings.MIDDLEWARE_CLASSES
-CMS_UNIQUE_SLUGS = getattr(settings, 'CMS_UNIQUE_SLUGS', i18n_installed)
+i18n_not_installed = not 'cms.middleware.multilingual.MultilingualURLMiddleware' in settings.MIDDLEWARE_CLASSES
+CMS_UNIQUE_SLUGS = getattr(settings, 'CMS_UNIQUE_SLUGS', i18n_not_installed)
 
 #Should the tree of the pages be also be displayed in the urls? or should a falt slug strucutre be used?
 CMS_FLAT_URLS = getattr(settings, 'CMS_FLAT_URLS', False)
@@ -96,12 +100,6 @@ DEFAULT_FROM_EMAIL = settings.DEFAULT_FROM_EMAIL
 INSTALLED_APPS = settings.INSTALLED_APPS
 LANGUAGES = settings.LANGUAGES
 
-# if the request host is not found in the db, should the default site_id be used or not? False means yes
-CMS_USE_REQUEST_SITE = getattr(settings, 'CMS_USE_REQUEST_SITE', False)
-
-# You can exclude some placeholder from the revision process
-CMS_CONTENT_REVISION_EXCLUDE_LIST = getattr(settings, 'CMS_CONTENT_REVISION_EXCLUDE_LIST', ())
-
 # Path for CMS media (uses <MEDIA_ROOT>/cms by default)
 CMS_MEDIA_PATH = getattr(settings, 'CMS_MEDIA_PATH', 'cms/')
 CMS_MEDIA_ROOT = join(settings.MEDIA_ROOT, CMS_MEDIA_PATH)
@@ -109,4 +107,11 @@ CMS_MEDIA_URL = join(settings.MEDIA_URL, CMS_MEDIA_PATH)
 
 # Path (relative to MEDIA_ROOT/MEDIA_URL) to directory for storing page-scope files.
 CMS_PAGE_MEDIA_PATH = getattr(settings, 'CMS_PAGE_MEDIA_PATH', 'cms_page_media/')
+
+# moderator mode - if True, approve path can be setup for every page, so there
+# will be some control over the published stuff
+CMS_MODERATOR = getattr(settings, 'CMS_MODERATOR', False) 
+
+#if CMS_MODERATOR and not CMS_PERMISSION:
+#    raise ImproperlyConfigured('CMS Moderator requires permissions to be enabled')
 

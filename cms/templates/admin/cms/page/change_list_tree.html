@@ -1,23 +1,26 @@
-{% load i18n cms_tags %}
+{% load i18n cms_admin %}
 <div id="sitemap" style="display:none">
 <ul class="header">
 	<li>
 		<div class="cont">
 			<div class="col1">{% trans "title" %}</div>
 			<div class="col2">
-				<div class="col-actions">{% trans "quick actions" %}</div>	
+				<div class="col-actions">{% trans "actions" %}</div>	
+				<div class="col-navigation">{% trans "in navigation" %}</div>
+				{% if CMS_MODERATOR %}<div class="col-moderator">{% trans "moderate" %}</div>{% endif %}
+				
+				<div class="col-draft">{% trans "draft" %}</div>
 				<div class="col-published">{% trans "published" %}</div>
-				<div class="col-navigation">{% trans "in navigation" %}</div>{% if softroot %}
-				<div class="col-softroot">{% trans "softroot" %}</div>{% endif %}
-				<div class="col-template">{% trans "template" %}</div>
-				<div class="col-creator">{% trans "author" %}</div>
+				
+				{% if CMS_MODERATOR %}<div class="col-lastchange">{% trans "last change" %}</div>{% endif %}
+				<div class="col-creator">{% trans "changed by" %}</div>
 			</div>
 		</div>
 	</li>
 </ul>
-<div class="tree">
+<div class="tree{% if not CMS_PERMISSION or has_add_permission %} root_allow_children{% endif %}">
 	<ul class="tree-default">
-		{% for page in cl.get_items %}{% show_admin_menu page cl.is_filtered %}{% endfor %}
+		{% for page in cl.get_items %}{% show_admin_menu page %}{% endfor %}
 	</ul>
 </div>
 </div>

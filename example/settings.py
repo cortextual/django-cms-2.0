@@ -13,12 +13,18 @@ CACHE_BACKEND = 'locmem:///'
 
 MANAGERS = ADMINS
 
-DATABASE_ENGINE = 'mysql'           # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
-DATABASE_NAME = 'cms'             # Or path to database file if using sqlite3.
-DATABASE_USER = 'cms'             # Not used with sqlite3.
-DATABASE_PASSWORD = 'cms'         # Not used with sqlite3.
-DATABASE_HOST = '127.0.0.1'             # Set to empty string for localhost. Not used with sqlite3.
-DATABASE_PORT = ''             # Set to empty string for default. Not used with sqlite3.
+DATABASE_ENGINE = 'mysql'       # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
+DATABASE_NAME = 'cms'           # Or path to database file if using sqlite3.
+DATABASE_USER = 'cms'           # Not used with sqlite3.
+DATABASE_PASSWORD = 'cms'       # Not used with sqlite3.
+DATABASE_HOST = '127.0.0.1'     # Set to empty string for localhost. Not used with sqlite3.
+DATABASE_PORT = ''              # Set to empty string for default. Not used with sqlite3.
+
+# Test database settings
+TEST_DATABASE_CHARSET = "utf8"
+TEST_DATABASE_COLLATION = "utf8_general_ci"
+
+DATABASE_SUPPORTS_TRANSACTIONS = True
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -73,10 +79,13 @@ MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.middleware.doc.XViewMiddleware',
+
     #'django.contrib.csrf.middleware.CsrfMiddleware',
-    'cms.middleware.CurrentPageMiddleware',
-    'cms.middleware.MultilingualURLMiddleware',
+    'cms.middleware.user.CurrentUserMiddleware',
+    'cms.middleware.page.CurrentPageMiddleware',
+    'cms.middleware.multilingual.MultilingualURLMiddleware',
     #'debug_toolbar.middleware.DebugToolbarMiddleware',
+    
 )
 
 ROOT_URLCONF = 'example.urls'
@@ -89,27 +98,33 @@ TEMPLATE_DIRS = (
 )
 
 INSTALLED_APPS = (
+    #'publisher.pre_publisher', # pre publisher
+    
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.admin',
     'django.contrib.sites',
     #'tagging',
+    
     'cms',
     'cms.plugins.text',
     'cms.plugins.picture',
     'cms.plugins.file',
     'cms.plugins.flash',
     'cms.plugins.link',
+    'cms.plugins.snippet',
+    'cms.plugins.googlemap',
+    'cms.plugins.teaser',
     'mptt',
     'reversion',
     'example.categories',
     'debug_toolbar',
-
     'south',
     # sample application
     'sampleapp',
     'store',
+    'publisher', # post publisher
 )
 
 gettext = lambda s: s
@@ -131,15 +146,33 @@ CMS_APPLICATIONS_URLS = (
     ('sampleapp.urlstwo', 'Second sample application'),
 )
 
+#CMS_PLACEHOLDER_CONF = {                        
+#    'right-column': {
+#        "plugins": ('FilePlugin','FlashPlugin','LinkPlugin','PicturePlugin','TextPlugin', 'SnippetsPlugin'),
+#        "extra_context": {"theme":"16_16"},
+#        "name":gettext("right column")
+#    },
+#    
+#    'body': {
+#        "extra_context": {"theme":"16_5"},
+#        "name":gettext("body"),
+#    },
+#    'fancy-content': {
+#        "plugins": ('TextPlugin', 'LinkPlugin'),
+#        "extra_context": {"theme":"16_11"},
+#        "name":gettext("fancy content"),
+#    },
+#}
+
 
 CMS_NAVIGATION_EXTENDERS = (('example.categories.navigation.get_nodes', 'Categories'),)
 
 CMS_SOFTROOT = True
+CMS_MODERATOR = True
+CMS_PERMISSION = True
 CMS_REDIRECTS = True
 CMS_SEO_FIELDS = True
 CMS_MENU_TITLE_OVERWRITE = True
-
-SOUTH_AUTO_FREEZE_APP = True
 
 try:
     from local_settings import *
