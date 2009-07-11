@@ -84,7 +84,7 @@ MIDDLEWARE_CLASSES = (
     'cms.middleware.user.CurrentUserMiddleware',
     'cms.middleware.page.CurrentPageMiddleware',
     'cms.middleware.multilingual.MultilingualURLMiddleware',
-    #'debug_toolbar.middleware.DebugToolbarMiddleware',
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
     
 )
 
@@ -98,8 +98,6 @@ TEMPLATE_DIRS = (
 )
 
 INSTALLED_APPS = (
-    #'publisher.pre_publisher', # pre publisher
-    
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -118,7 +116,7 @@ INSTALLED_APPS = (
     'cms.plugins.teaser',
     'mptt',
     'reversion',
-    'example.categories',
+    #'example.categories',
     'debug_toolbar',
     'south',
     # sample application
@@ -146,30 +144,30 @@ CMS_APPLICATIONS_URLS = (
     ('sampleapp.urlstwo', 'Second sample application'),
 )
 
-#CMS_PLACEHOLDER_CONF = {                        
-#    'right-column': {
-#        "plugins": ('FilePlugin','FlashPlugin','LinkPlugin','PicturePlugin','TextPlugin', 'SnippetsPlugin'),
-#        "extra_context": {"theme":"16_16"},
-#        "name":gettext("right column")
-#    },
-#    
-#    'body': {
-#        "extra_context": {"theme":"16_5"},
-#        "name":gettext("body"),
-#    },
-#    'fancy-content': {
-#        "plugins": ('TextPlugin', 'LinkPlugin'),
-#        "extra_context": {"theme":"16_11"},
-#        "name":gettext("fancy content"),
-#    },
-#}
+CMS_PLACEHOLDER_CONF = {                        
+    'right-column': {
+        "plugins": ('FilePlugin','FlashPlugin','LinkPlugin','PicturePlugin','TextPlugin', 'SnippetsPlugin'),
+        "extra_context": {"theme":"16_16"},
+        "name":gettext("right column")
+    },
+    
+    'body': {
+        "extra_context": {"theme":"16_5"},
+        "name":gettext("body"),
+    },
+    'fancy-content': {
+        "plugins": ('TextPlugin', 'LinkPlugin'),
+        "extra_context": {"theme":"16_11"},
+        "name":gettext("fancy content"),
+    },
+}
 
 
 CMS_NAVIGATION_EXTENDERS = (('example.categories.navigation.get_nodes', 'Categories'),)
 
 CMS_SOFTROOT = True
-CMS_MODERATOR = True
-CMS_PERMISSION = True
+CMS_MODERATOR = False
+CMS_PERMISSION = False
 CMS_REDIRECTS = True
 CMS_SEO_FIELDS = True
 CMS_MENU_TITLE_OVERWRITE = True

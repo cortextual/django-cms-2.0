@@ -239,11 +239,11 @@ class Page(Publisher, Mptt):
             self.reverse_id = None
         
         from cms.utils.permissions import _thread_locals
+        
+        self.changed_by = _thread_locals.user.username
         if not self.pk:
-            self.created_by = self.changed_by = _thread_locals.user.username
-        else:
-            self.changed_by = _thread_locals.user.username
-            
+            self.created_by = self.changed_by 
+        
         if commit:
             if no_signals:# ugly hack because of mptt
                 super(Page, self).save_base(cls=self.__class__)
@@ -294,7 +294,13 @@ class Page(Publisher, Mptt):
             path = self.get_slug(language, fallback)
         else:
             path = self.get_path(language, fallback)
-            if self.parent_id and self.get_cached_ancestors()[0].pk == self.get_home_pk_cache():
+            home_pk = None
+            try:
+                home_pk = self.get_home_pk_cache()
+            except NoHomeFound:
+                pass
+            ancestors = self.get_cached_ancestors()
+            if self.parent_id and ancestors[0].pk == home_pk and not self.get_title_obj_attribute("has_url_overwrite", language, fallback):
                 path = "/".join(path.split("/")[1:])
             
         return urljoin(reverse('pages-root'), path)
@@ -516,13 +522,21 @@ class Page(Publisher, Mptt):
         if self.parent_id:
             return False
         else:
-            return self.get_home_pk_cache() == self.pk
+            try:
+                return self.get_home_pk_cache() == self.pk
+            except NoHomeFound:
+                pass
+        return False
         
     def is_parent_home(self):
         if not self.parent_id:
             return False
         else:
-            return self.get_home_pk_cache() == self.parent_id
+            try:
+                return self.get_home_pk_cache() == self.parent_id
+            except NoHomeFound:
+                pass
+        return False
         
     def get_home_pk_cache(self):
         if not hasattr(self, "home_pk_cache"):
@@ -586,6 +600,9 @@ class Page(Publisher, Mptt):
         
         Returns: True if page was successfully published.
         """
+        if not settings.CMS_MODERATOR:
+            return
+        
         # clean moderation log
         self.pagemoderatorstate_set.all().delete()
         
