@@ -38,7 +38,7 @@ class CMSChangeList(ChangeList):
             del self.params[COPY_VAR]
         
             
-        qs = super(CMSChangeList, self).get_query_set()
+        qs = super(CMSChangeList, self).get_query_set().drafts()
         if request:
             permissions = Page.permissions.get_change_list_id_list(request.user)
             if permissions != Page.permissions.GRANT_ALL:
@@ -69,7 +69,7 @@ class CMSChangeList(ChangeList):
     
     def set_items(self, request):
         lang = get_language_from_request(request)
-        pages = self.get_query_set(request).order_by('tree_id', 'parent', 'lft').select_related()
+        pages = self.get_query_set(request).drafts().order_by('tree_id', 'parent', 'lft').select_related()
         
         perm_edit_ids = Page.permissions.get_change_id_list(request.user)
         perm_publish_ids = Page.permissions.get_publish_id_list(request.user)
@@ -81,16 +81,16 @@ class CMSChangeList(ChangeList):
             pages = pages.filter(pk__in=perm_change_list_ids)   
         
         if settings.CMS_MODERATOR:
-            # get all ids of public models, so we can cache them
+            # get all ids of public instances, so we can cache them
             # TODO: add some filtering here, so the set is the same like page set...
-            published_public_page_id_set = Page.PublicModel.objects.filter(published=True).values_list('id', flat=True)
+            published_public_page_id_set = Page.objects.public().filter(published=True).values_list('id', flat=True)
         
         ids = []
         root_pages = []
         pages = list(pages)
         all_pages = pages[:]
         try:
-            home_pk = Page.objects.get_home(self.current_site()).pk
+            home_pk = Page.objects.drafts().get_home(self.current_site()).pk
         except NoHomeFound:
             home_pk = 0
             
@@ -116,7 +116,7 @@ class CMSChangeList(ChangeList):
             
             if settings.CMS_MODERATOR:
                 # set public instance existence state
-                page.public_published_cache = page.public_id in published_public_page_id_set
+                page.public_published_cache = page.publisher_public_id in published_public_page_id_set
                 
                 
             if page.root_node or self.is_filtered():

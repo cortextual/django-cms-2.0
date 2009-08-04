@@ -174,6 +174,8 @@ class PageAdmin(admin.ModelAdmin):
             return self.remove_delete_state(request, unquote(url[:-20]))
         elif url.endswith('/dialog/copy'):
             return get_copy_dialog(request, unquote(url[:-12]))
+        elif url.endswith('/preview'):
+            return self.preview_page(request, unquote(url[:-8]))
         # NOTE: revert plugin is newly integrated in overriden revision_view
         if len(url.split("/?")):# strange bug in 1.0.2 if post and get variables in the same request
             url = url.split("/?")[0]
@@ -212,6 +214,7 @@ class PageAdmin(admin.ModelAdmin):
             pat(r'^([0-9]+)/approve/$', self.approve_page), # approve page 
             pat(r'^([0-9]+)/remove-delete-state/$', self.remove_delete_state),
             pat(r'^([0-9]+)/dialog/copy/$', get_copy_dialog), # copy dialog
+            pat(r'^([0-9]+)/preview/$', self.preview_page), # copy dialog            
         )
         
         url_patterns.extend(super(PageAdmin, self).get_urls())
@@ -270,15 +273,15 @@ class PageAdmin(admin.ModelAdmin):
         Title.objects.set_or_create(
             obj, 
             language, 
-            form.cleaned_data['slug'],
-            form.cleaned_data['title'],
-            form.cleaned_data.get('application_urls', None),
-            form.cleaned_data.get('overwrite_url', None),
-            form.cleaned_data.get('redirect', None),
-            form.cleaned_data.get('meta_description', None),
-            form.cleaned_data.get('meta_keywords', None),
-            form.cleaned_data.get('page_title', None),
-            form.cleaned_data.get('menu_title', None),
+            slug=form.cleaned_data['slug'],
+            title=form.cleaned_data['title'],
+            application_urls=form.cleaned_data.get('application_urls', None),
+            overwrite_url=form.cleaned_data.get('overwrite_url', None),
+            redirect=form.cleaned_data.get('redirect', None),
+            meta_description=form.cleaned_data.get('meta_description', None),
+            meta_keywords=form.cleaned_data.get('meta_keywords', None),
+            page_title=form.cleaned_data.get('page_title', None),
+            menu_title=form.cleaned_data.get('menu_title', None),
         )
         
         # is there any moderation message? save/update state
@@ -371,13 +374,16 @@ class PageAdmin(admin.ModelAdmin):
             for name in ['slug',
                          'title',
                          'application_urls',
-                         'overwrite_url',
                          'redirect',
                          'meta_description',
                          'meta_keywords', 
                          'menu_title', 
                          'page_title']:
                 form.base_fields[name].initial = getattr(title_obj, name)
+            if title_obj.overwrite_url:
+                form.base_fields['overwrite_url'].initial = title_obj.path
+            else:
+                form.base_fields['overwrite_url'].initial = ""
             if settings.CMS_TEMPLATES:
                 template = get_template_from_request(request, obj)
                 template_choices = list(settings.CMS_TEMPLATES)
@@ -522,7 +528,10 @@ class PageAdmin(admin.ModelAdmin):
         some new stuff, which should be published after all other objects on page 
         are collected.
         """
-        obj.save(commit=False)
+        if settings.CMS_MODERATOR:
+            # save the object again, so all the related changes to page model 
+            # can be published if required
+            obj.save()
         return super(PageAdmin, self).response_change(request, obj)
         
     def has_add_permission(self, request):
@@ -813,15 +822,15 @@ class PageAdmin(admin.ModelAdmin):
         if settings.CMS_MODERATOR and page.is_under_moderation():
             # don't perform a delete action, just mark page for deletion
             page.force_moderation_action = PageModeratorState.ACTION_DELETE
-            page.moderator_state = Page.MODERATOR_NEED_APPROVEMENT
+            page.moderator_state = Page.MODERATOR_NEED_DELETE_APPROVEMENT
             page.save()
             
             if not self.has_change_permission(request, None):
                 return HttpResponseRedirect("../../../../")
             return HttpResponseRedirect("../../")
         
-        public = page.public
         response = super(PageAdmin, self).delete_view(request, object_id, *args, **kwargs)
+        public = page.publisher_public
         if request.method == 'POST' and response.status_code == 302 and public:
             public.delete()
         return response
@@ -833,7 +842,28 @@ class PageAdmin(admin.ModelAdmin):
         if not self.has_change_permission(request, page):
             raise PermissionDenied
         page.pagemoderatorstate_set.get_delete_actions().delete()
+        page.moderator_state = Page.MODERATOR_NEED_APPROVEMENT
+        page.save()
         return HttpResponseRedirect("../../%d/" % page.id)
+    
+    def preview_page(self, request, object_id):
+        """Redirecting preview function based on draft_id 
+        """
+        instance = page = get_object_or_404(Page, id=object_id)
+        attrs = "?preview=1"
+        if request.REQUEST.get('public', None):
+            if not page.publisher_public_id:
+                raise Http404
+            instance = page.publisher_public
+        else:
+            attrs += "&draft=1"
+        
+        url = instance.get_absolute_url() + attrs
+        site = Site.objects.get_current()
+        
+        if not site == instance.site:
+            url = "http://%s%s%s" % (site.domain, url)
+        return HttpResponseRedirect(url)
         
 
 class PageAdminMixins(admin.ModelAdmin):

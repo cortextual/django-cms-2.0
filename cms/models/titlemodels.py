@@ -25,7 +25,7 @@ class Title(Publisher):
     objects = TitleManager()
     
     class Meta:
-        unique_together = (('language', 'page'),)
+        unique_together = (('publisher_is_draft', 'language', 'page'),)
         app_label = 'cms'
     
     def __unicode__(self):
@@ -37,10 +37,11 @@ class Title(Publisher):
         parent_page = self.page.parent
         
         slug = u'%s' % self.slug
-        if parent_page:
-            self.path = u'%s/%s' % (Title.objects.get_title(parent_page, language=self.language, language_fallback=True).path, slug)
-        else:
-            self.path = u'%s' % slug
+        if not self.has_url_overwrite:
+            if parent_page:
+                self.path = u'%s/%s' % (Title.objects.get_title(parent_page, language=self.language, language_fallback=True).path, slug)
+            else:
+                self.path = u'%s' % slug
         super(Title, self).save()
         # Update descendants only if path changed
         if current_path != self.path:

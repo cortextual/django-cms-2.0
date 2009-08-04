@@ -1,110 +1,97 @@
-from datetime import datetime
 from django.db import models
 from django.contrib.sites.models import Site
 from django.db.models import Q
 from cms import settings
-from cms.utils.urlutils import levelize_path
-from cms.exceptions import NoPermissionsException, NoHomeFound
+from cms.exceptions import NoPermissionsException
 from cms.cache.permissions import get_permission_cache, set_permission_cache
+from publisher import PublisherManager
+from cms.models.query import PageQuerySet
 
 try:
     set
 except NameError:
     from sets import Set as set
 
-class PageManager(models.Manager):
-    def on_site(self, site=None):
-        if not site:
-            site = Site.objects.get_current()
-        return self.filter(site=site)
+    
+class PageManager(PublisherManager):
+    """Use draft() and public() methods for accessing the corresponding
+    instances.
+    """
+    
+    def get_query_set(self):
+        """Change standard model queryset to our own.
+        """
+        return PageQuerySet(self.model)
+    
+    
+    # !IMPORTANT: following methods always return access to draft instances, 
+    # take care on what you do one them. use Page.objects.public() for accessing
+    # the published page versions
+    
+    # Just some of the queryset methods are implemented here, access queryset 
+    # for more getting more supporting methods.
+    
+    # TODO: check which from following methods are really required to be on
+    # manager, maybe some of them can be just accessible over queryset...?
+    
+    def on_site(self, site=None): 
+        return self.get_query_set().on_site(site)
         
     def root(self):
         """
         Return a queryset with pages that don't have parents, a.k.a. root. For
         current site - used in frontend
         """
-        return self.on_site().filter(parent__isnull=True)
+        return self.get_query_set().root()
     
     def all_root(self):
         """
         Return a queryset with pages that don't have parents, a.k.a. root. For 
         all sites - used in frontend
         """
-        return self.filter(parent__isnull=True)
+        return self.get_query_set().all_root()
 
     def valid_targets(self, page_id, request, perms, page=None):
         """
         Give valid targets to move a page into the tree
         """
-        if page is None:
-            page = self.get(pk=page_id)
-        exclude_list = []
-        if page:
-            exclude_list.append(page.id)
-            for p in page.get_descendants():
-                exclude_list.append(p.id)
-        if perms != "All":
-            return self.filter(id__in=perms).exclude(id__in=exclude_list)
-        else:
-            return self.exclude(id__in=exclude_list)
+        return self.get_query_set().valid_targets(page_id, request, perms, page)
 
     def published(self, site=None):
-        pub = self.on_site().filter(published=True)
-
-        if settings.CMS_SHOW_START_DATE:
-            pub = pub.filter(
-                Q(publication_date__gt=datetime.now()) |
-                Q(publication_date__isnull=True)
-            )
-
-        if settings.CMS_SHOW_END_DATE:
-            pub = pub.filter(
-                Q(publication_end_date__lte=datetime.now()) |
-                Q(publication_end_date__isnull=True)
-            )
-        return pub
-
-    def drafts(self):
-        pub = self.on_site().filter(published=False)
-        if settings.CMS_SHOW_START_DATE:
-            pub = pub.filter(publication_date__gte=datetime.now())
-        return pub
-
-    def expired(self):
-        return self.on_site().filter(
-            publication_end_date__lte=datetime.now())
+        return self.get_query_set().published(site)
         
+    def expired(self):
+        return self.drafts().expired()
+        
+#    - seems this is not used anymore...  
+#    def get_pages_with_application(self, path, language):
+#        """Returns all pages containing application for current path, or
+#        any parrent. Returned list is sorted by path length, longer path first.
+#        """
+#        paths = levelize_path(path)
+#        q = Q()
+#        for path in paths:
+#            # build q for all the paths
+#            q |= Q(title_set__path=path, title_set__language=language)
+#        app_pages = self.published().filter(q & Q(title_set__application_urls__gt='')).distinct()
+#        # add proper ordering
+#        app_pages.query.order_by.extend(('LENGTH(`cms_title`.`path`) DESC',))
+#        return app_pages
     
-    def get_pages_with_application(self, path, language):
-        """Returns all pages containing application for current path, or
-        any parrent. Returned list is sorted by path length, longer path first.
-        """
-        paths = levelize_path(path)
-        q = Q()
-        for path in paths:
-            # build q for all the paths
-            q |= Q(title_set__path=path, title_set__language=language)
-        app_pages = self.published().filter(q & Q(title_set__application_urls__gt='')).distinct()
-        # add proper ordering
-        app_pages.query.order_by.extend(('LENGTH(`cms_title`.`path`) DESC',))
-        return app_pages
-    
+
     def get_all_pages_with_application(self):
         """Returns all pages containing applications for all sites.
         
         Doesn't cares about the application language. 
         """
-        return self.published().filter(title_set__application_urls__gt='').distinct()
+        return self.get_query_set().filter(title_set__application_urls__gt='').distinct()
     
     def get_home(self, site=None):
-        try:
-            home = self.published(site).order_by("tree_id")[0]
-        except IndexError:
-            raise  NoHomeFound('No Root page found. Publish at least on page!')
-        return home
+        return self.get_query_set().get_home(site)
+
+            
         
-        
-class TitleManager(models.Manager):
+class TitleManager(PublisherManager):
     def get_title(self, page, language, language_fallback=False, latest_by='creation_date'):
         """
         Gets the latest content for a particular page and language. Falls back
@@ -170,7 +157,7 @@ class TitleManager(models.Manager):
                 application_urls=application_urls, redirect=redirect,
                 meta_description=meta_description, meta_keywords=meta_keywords,
                 page_title=page_title, menu_title=menu_title)
-        if overwrite_url > "":
+        if overwrite_url:
             obj.has_url_overwrite = True
             obj.path = overwrite_url
         else:

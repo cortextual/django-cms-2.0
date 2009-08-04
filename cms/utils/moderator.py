@@ -7,7 +7,7 @@ from cms.utils.permissions import get_current_user
 
 
 I_APPROVE = 100 # current user should approve page
-
+I_APPROVE_DELETE = 200
 
 def page_changed(page, old_page=None, force_moderation_action=None):
     """Called from page post save signal. If page already had pk, old version
@@ -31,7 +31,7 @@ def page_changed(page, old_page=None, force_moderation_action=None):
         PageModeratorState(user=user, page=page, action=action).save()
     
     if ((old_page and not old_page.moderator_state == page.moderator_state) or not old_page) \
-        and page.moderator_state == Page.MODERATOR_NEED_APPROVEMENT:
+        and page.requires_approvement():
         # update_moderation_message can be called after this :S -> recipient will not
         # see the last message
         mail_approvement_request(page, user)
@@ -72,31 +72,35 @@ def page_moderator_state(request, page):
     Returns:
         dict(state=state, label=label)
     """
-    state, label = page.moderator_state, None
+    state, label = page.moderator_state, ""
+    
+    under_moderation = page.get_moderator_queryset()
+    
     if cms_settings.CMS_MODERATOR:
-        if state == Page.MODERATOR_NEED_APPROVEMENT and page.has_moderate_permission(request) \
-            and page.get_moderator_queryset().filter(user=request.user).count() \
+        if state == Page.MODERATOR_APPROVED_WAITING_FOR_PARENTS:
+            label = _('parent first')
+        elif page.requires_approvement() and page.has_moderate_permission(request) \
+            and under_moderation.filter(user=request.user).count() \
             and not page.pagemoderatorstate_set.filter(user=request.user, action=PageModeratorState.ACTION_APPROVE).count():
                 # only if he didn't approve already...
-                state = I_APPROVE
-                label = _('approve')
+                is_delete = state == Page.MODERATOR_NEED_DELETE_APPROVEMENT
+                state = is_delete and I_APPROVE_DELETE or I_APPROVE 
+                label = is_delete and _('delete') or _('approve')
             
     elif not page.is_approved():
         # if no moderator, we have just 2 states => changed / unchanged
         state = Page.MODERATOR_NEED_APPROVEMENT
     
-    if page.is_approved():
-        label = ""
-    elif not label:
-        label = dict(page.moderator_state_choices)[state]
-    
+    if not page.is_approved() and not label:
+        if under_moderation.count():
+            label = dict(page.moderator_state_choices)[state]            
     return dict(state=state, label=label)
 
 
 def moderator_should_approve(request, page):
     """Says if user should approve given page. (just helper)
     """
-    return page_moderator_state(request, page)['state'] is I_APPROVE
+    return page_moderator_state(request, page)['state'] >= I_APPROVE
 
 
 def requires_moderation(page):
@@ -186,42 +190,24 @@ def approve_page(request, page):
         # first case - just mark page as approved from this user
         PageModeratorState(user=request.user, page=page, action=PageModeratorState.ACTION_APPROVE).save() 
 
-def get_model(model, request=None):
-    """Decision function - says which model should be used. Public models are 
-    used only if CMS_MODERATOR.
+
+def get_model_queryset(model, request=None):
+    """Decision function used in frontend - says which model should be used. 
+    Public models are used only if CMS_MODERATOR.
     """
     if not cms_settings.CMS_MODERATOR or \
         (request and 'preview' in request.GET and 
             'draft' in request.GET and request.user.is_staff):
-        return model
-    return model.PublicModel
-     
+        return model.objects.drafts()
+    
+    return model.objects.public()
+
+# queryset helpers for basic models
+get_page_queryset = lambda request=None: get_model_queryset(Page, request) 
+get_title_queryset = lambda request=None: get_model_queryset(Title, request)
+get_cmsplugin_queryset = lambda request=None: get_model_queryset(CMSPlugin, request) 
         
-def get_page_model(request=None):
-    """Decides which Page model should be used - Draft, or PublicPage depending
-    on request. 
     
-    !IMPORTANT: All scripts should request Page from here...
-    """
-    return get_model(Page, request)
-
-def get_title_model(request=None):
-    """Decides which Title model should be used - Draft, or PublicPage depending
-    on request. 
-    
-    !IMPORTANT: All scripts should request Title from here...
-    """
-    return get_model(Title, request)
-
-
-def get_cmsplugin_model(request=None):
-    """Decides which CMSPlugin model should be used - Draft, or PublicPage depending
-    on request. 
-    
-    !IMPORTANT: All scripts should request Page from here...
-    """
-    return get_model(CMSPlugin, request)
-
 def mail_approvement_request(page, user=None):
     """Sends approvement request over email to all users which should approve 
     this page if they have an email entered.
@@ -229,7 +215,7 @@ def mail_approvement_request(page, user=None):
     Don't send it to current user - he should now about it, because he made the 
     change.
     """
-    if not cms_settings.CMS_MODERATOR or not page.moderator_state == Page.MODERATOR_NEED_APPROVEMENT:
+    if not cms_settings.CMS_MODERATOR or not page.requires_approvement():
         return
     
     recipient_list = []

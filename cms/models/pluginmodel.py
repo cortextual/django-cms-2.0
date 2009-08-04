@@ -7,7 +7,7 @@ from django.utils.translation import ugettext_lazy as _
 from django.utils.safestring import mark_safe
 from django.template.loader import render_to_string
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
-from publisher import Publisher, Mptt
+from publisher import MpttPublisher
 from django.template.context import Context
 from cms import settings
 
@@ -27,7 +27,7 @@ class PluginModelBase(ModelBase):
         return new_class 
          
     
-class CMSPlugin(Publisher, Mptt):
+class CMSPlugin(MpttPublisher):
     __metaclass__ = PluginModelBase
     
     page = models.ForeignKey(Page, verbose_name=_("page"), editable=False)
@@ -48,6 +48,10 @@ class CMSPlugin(Publisher, Mptt):
     
     class Meta:
         app_label = 'cms'
+        
+    class PublisherMeta:
+        exclude_fields = []
+        exclude_fields_append = ['plugin_ptr']
     
     def get_plugin_name(self):
         from cms.plugin_pool import plugin_pool
@@ -131,8 +135,29 @@ class CMSPlugin(Publisher, Mptt):
     def set_base_attr(self, plugin):
         for attr in ['parent_id', 'page_id', 'placeholder', 'language', 'plugin_type', 'creation_date', 'level', 'lft', 'rght', 'position', 'tree_id']:
             setattr(plugin, attr, getattr(self, attr))
+    
+    def _publisher_get_public_copy(self):
+        """Overrides publisher public copy acessor, because of the special
+        kind of relation between Plugins.
+        """   
+        publisher_public = self.publisher_public
+        if not publisher_public:
+            return
+        elif publisher_public.__class__ is self.__class__:
+            return publisher_public
+        try:
+            return self.__class__.objects.get(pk=self.publisher_public_id)
+        except ObjectDoesNotExist:
+            # extender dosent exist yet
+            public_copy = self.__class__()
+            # copy values of all local fields
+            for field in publisher_public._meta.local_fields:
+                value = getattr(publisher_public, field.name)
+                setattr(public_copy, field.name, value)
+            public_copy.publisher_is_draft=False
+            return public_copy
         
-
+        
 if 'reversion' in settings.INSTALLED_APPS:
     import reversion        
     reversion.register(CMSPlugin)

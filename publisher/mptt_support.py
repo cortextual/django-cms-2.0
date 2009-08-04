@@ -19,14 +19,24 @@ Requirements:
 
 from django.db.models import signals
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
-from publisher.base import Mptt
+
+
+class Mptt(models.Model):
+    """Abstract class which have to be extended for putting model under mptt. 
+    For changing attributes see MpttMeta
+    """
+    class Meta:
+        abstract = True
+
 
 class MpttMeta:
     """Basic mptt configuration class - something like Meta in model
     """
     
-    parent_attr = 'parent' 
+    META_ATTRIBUTES = ('parent_attr', 'left_attr', 'right_attr', 
+        'tree_id_attr', 'level_attr', 'tree_manager_attr', 'order_insertion_by')
+    
+    parent_attr = 'parent'
     left_attr = 'lft'
     right_attr = 'rght'
     tree_id_attr = 'tree_id' 
@@ -57,11 +67,8 @@ class MpttMeta:
         
         from mptt.managers import TreeManager
         
-        meta_attributes = ('parent_attr', 'left_attr', 'right_attr', 
-            'tree_id_attr', 'level_attr', 'tree_manager_attr', 'order_insertion_by')
-    
         # jsut copy attributes to meta
-        for attr in meta_attributes:
+        for attr in MpttMeta.META_ATTRIBUTES:
             setattr(main_cls._meta, attr, getattr(cls, attr))
         
         meta = main_cls._meta
@@ -95,8 +102,9 @@ class MpttMeta:
 def install_mptt(cls, name, bases, attrs):
     """Installs mptt - modifies class attrs, and adds required stuff to them.
     """
-
-    if not Mptt in bases:
+    from publisher.models import MpttPublisher
+    
+    if not Mptt in bases and not MpttPublisher in bases:
         return attrs 
     
     if 'MpttMeta' in attrs and not issubclass(attrs['MpttMeta'], MpttMeta):
@@ -139,7 +147,9 @@ def install_mptt(cls, name, bases, attrs):
 def finish_mptt(cls):
     if not hasattr(cls, '_is_mptt_model'):
         return
+    
     from mptt import registry
     if not cls in registry:
         registry.append(cls)
+    
 

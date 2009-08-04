@@ -6,8 +6,8 @@ from django.utils.translation import ugettext_lazy as _, get_language
 from django.core.urlresolvers import reverse
 from django.contrib.sites.models import Site
 from django.shortcuts import get_object_or_404
-from publisher import Publisher, Mptt
-from publisher.errors import MpttCantPublish
+from publisher import MpttPublisher
+from publisher.errors import PublisherCantPublish
 from cms.utils.urlutils import urljoin
 from cms import settings
 from cms.models.managers import PageManager, PagePermissionsPermissionManager
@@ -17,12 +17,13 @@ from cms.exceptions import NoHomeFound
 
 
 
-class Page(Publisher, Mptt):
+class Page(MpttPublisher):
     """
     A simple hierarchical page model
     """
     MODERATOR_CHANGED = 0
     MODERATOR_NEED_APPROVEMENT = 1
+    MODERATOR_NEED_DELETE_APPROVEMENT = 2
     MODERATOR_APPROVED = 10
     # special case - page was approved, but some of page parents if not approved yet
     MODERATOR_APPROVED_WAITING_FOR_PARENTS = 11
@@ -30,6 +31,7 @@ class Page(Publisher, Mptt):
     moderator_state_choices = (
         (MODERATOR_CHANGED, _('changed')),
         (MODERATOR_NEED_APPROVEMENT, _('req. app.')),
+        (MODERATOR_NEED_DELETE_APPROVEMENT, _('delete')),
         (MODERATOR_APPROVED, _('approved')),
         (MODERATOR_APPROVED_WAITING_FOR_PARENTS, _('app. par.')),
     )
@@ -57,13 +59,6 @@ class Page(Publisher, Mptt):
     tree_id = models.PositiveIntegerField(db_index=True, editable=False)
     
     
-    def get_hash(self):
-        """Used in object comparison - if there were some change between objects
-        generates sha1.
-        """
-        
-    
-    
     # Managers
     objects = PageManager()
     permissions = PagePermissionsPermissionManager()
@@ -73,7 +68,9 @@ class Page(Publisher, Mptt):
         verbose_name_plural = _('pages')
         ordering = ('tree_id', 'lft')
         app_label = 'cms'
-
+    
+    class PublisherMeta:
+        exclude_fields_append = ['moderator_state']
     
     def __unicode__(self):
         slug = self.get_slug(fallback=True)
@@ -127,7 +124,7 @@ class Page(Publisher, Mptt):
             page.tree_id = None
             page.status = Page.MODERATOR_NEED_APPROVEMENT
             page.parent = tree[-1]
-            page.public_id = None
+            page.publisher_public_id = None
             page.reverse_id = None
             page.save()
             
@@ -154,7 +151,7 @@ class Page(Publisher, Mptt):
             page.save()
             for title in titles:
                 title.pk = None
-                title.public_id = None
+                title.publisher_public_id = None
                 title.page = page
                 title.slug = get_available_slug(title)
                 title.save()
@@ -167,8 +164,7 @@ class Page(Publisher, Mptt):
                 p.tree_id = None
                 p.lft = None
                 p.rght = None
-                p.public_id = None
-                p.inherited_public_id = None
+                p.publisher_public_id = None
                 
                 if p.parent:
                     pdif = p.level - ptree[-1].level
@@ -190,13 +186,12 @@ class Page(Publisher, Mptt):
                     plugin.rght = p.rght
                     plugin.level = p.level
                     plugin.cmsplugin_ptr = p
-                    plugin.inherited_public_id = p.inherited_public_id
-                    plugin.public_id = p.pk
+                    plugin.publisher_public_id = p.pk
                     plugin.save()
             if dif != 0:
                 tree.append(page)
     
-    def save(self, no_signals=False, change_state=True, commit=True, force_with_moderation=False):
+    def save(self, no_signals=False, change_state=True, commit=True, force_with_moderation=False, force_state=None):
         """
         Args:
             
@@ -205,29 +200,44 @@ class Page(Publisher, Mptt):
                 some existing page and this new page will require moderation; 
                 this is because of how this adding works - first save, then move
         """
+        
         # Published pages should always have a publication date
         publish_directly, under_moderation = False, False
         
-        if settings.CMS_MODERATOR:
-            under_moderation = force_with_moderation or self.pk and bool(self.get_moderator_queryset().count())
-        
-        
-        created = not bool(self.pk)
-        if settings.CMS_MODERATOR:
-            if change_state:
-                if self.moderator_state is not Page.MODERATOR_CHANGED:
-                    # always change state to need approvement when there is some change
-                    self.moderator_state = Page.MODERATOR_NEED_APPROVEMENT
-                
-                if not under_moderation:
-                    # existing page without moderator - publish it directly
-                    publish_directly = True
-        elif change_state:
-            self.moderator_state = Page.MODERATOR_CHANGED
-            publish_directly = True
+        if self.publisher_is_draft:
+            # publisher specific stuff, but only on draft model, this is here 
+            # because page initializes publish process
+            
+            if settings.CMS_MODERATOR:
+                under_moderation = force_with_moderation or self.pk and bool(self.get_moderator_queryset().count())
+            
+            created = not bool(self.pk)
+            if settings.CMS_MODERATOR:
+                if change_state:
+                    if created:
+                        # new page....
+                        self.moderator_state = Page.MODERATOR_CHANGED
+                    elif not self.requires_approvement():
+                        # always change state to need approvement when there is some change
+                        self.moderator_state = Page.MODERATOR_NEED_APPROVEMENT
+                    
+                    if not under_moderation and (self.published or self.publisher_public):
+                        # existing page without moderator - publish it directly if 
+                        # published is True
+                        publish_directly = True
+                    
+            elif change_state:
+                self.moderator_state = Page.MODERATOR_CHANGED
+                #publish_directly = True - no publisher, no publishing!! - we just
+                # use draft models in this case
+            
+            if force_state is not None:
+                self.moderator_state = force_state
+            
         
         if self.publication_date is None and self.published:
             self.publication_date = datetime.now()
+        
         # Drafts should not, unless they have been set to the future
         if self.published:
             if settings.CMS_SHOW_START_DATE:
@@ -250,9 +260,10 @@ class Page(Publisher, Mptt):
             else:
                 super(Page, self).save()
         
-        if publish_directly or created and not under_moderation:
+        #if commit and (publish_directly or created and not under_moderation):
+        if self.publisher_is_draft and commit and publish_directly:
             self.publish()
-            cms_signals.post_publish.send(sender=Page, instance=self)
+            # post_publish signal moved to end of publish method()
 
     def get_calculated_status(self):
         """
@@ -296,10 +307,11 @@ class Page(Publisher, Mptt):
             path = self.get_path(language, fallback)
             home_pk = None
             try:
-                home_pk = self.get_home_pk_cache()
+                home_pk = self.home_pk_cache
             except NoHomeFound:
                 pass
             ancestors = self.get_cached_ancestors()
+            
             if self.parent_id and ancestors[0].pk == home_pk and not self.get_title_obj_attribute("has_url_overwrite", language, fallback):
                 path = "/".join(path.split("/")[1:])
             
@@ -523,26 +535,36 @@ class Page(Publisher, Mptt):
             return False
         else:
             try:
-                return self.get_home_pk_cache() == self.pk
+                return self.home_pk_cache == self.pk
             except NoHomeFound:
                 pass
         return False
-        
+    
+    """ - not used.. - kill ?
     def is_parent_home(self):
         if not self.parent_id:
             return False
         else:
             try:
-                return self.get_home_pk_cache() == self.parent_id
+                return self.home_pk_cache == self.parent_id
             except NoHomeFound:
                 pass
         return False
-        
+    """ 
+    
     def get_home_pk_cache(self):
-        if not hasattr(self, "home_pk_cache"):
-            self.home_pk_cache = Page.objects.get_home().pk
-        return self.home_pk_cache
-            
+        attr = "%s_home_pk_cache" % (self.publisher_is_draft and "draft" or "public")
+        if not hasattr(self, attr):
+            setattr(self, attr, self.get_object_queryset().get_home().pk)
+        return getattr(self, attr)
+
+    
+    def set_home_pk_cache(self, value):
+        attr = "%s_home_pk_cache" % (self.publisher_is_draft and "draft" or "public")
+        setattr(self, attr, value)
+    
+    home_pk_cache = property(get_home_pk_cache, set_home_pk_cache)
+    
     def get_media_path(self, filename):
         """
         Returns path (relative to MEDIA_ROOT/MEDIA_URL) to directory for storing page-scope files.
@@ -556,17 +578,12 @@ class Page(Publisher, Mptt):
         """
         return join(settings.CMS_PAGE_MEDIA_PATH, "%d" % self.id, filename)
     
-    def last_page_state(self):
-        """Returns last page state if CMS_MODERATOR
+    def last_page_states(self):
+        """Returns last five page states, if they exist
         """
-        
         # TODO: optimize SQL... 1 query per page 
         if settings.CMS_MODERATOR:
-            # unknown state if no moderator
-            try:
-                return self.pagemoderatorstate_set.all().order_by('-created',)[0]
-            except IndexError:
-                pass
+            return self.pagemoderatorstate_set.all().order_by('created',)[:5]
         return None
     
     def get_moderator_queryset(self):
@@ -592,7 +609,7 @@ class Page(Publisher, Mptt):
         """
         return self.moderator_state in (Page.MODERATOR_APPROVED, Page.MODERATOR_APPROVED_WAITING_FOR_PARENTS)
     
-    def publish(self, fields=None, exclude=None):
+    def publish(self):
         """Overrides Publisher method, because there may be some descendants, which
         are waiting for parent to publish, so publish them if possible. 
         
@@ -603,59 +620,23 @@ class Page(Publisher, Mptt):
         if not settings.CMS_MODERATOR:
             return
         
+        # publish, but only if all parents are published!!
+        published = None
+        
+        try:
+            published = super(Page, self).publish()
+            self.moderator_state = Page.MODERATOR_APPROVED
+        except PublisherCantPublish:
+            self.moderator_state = Page.MODERATOR_APPROVED_WAITING_FOR_PARENTS
+            
+        self.save(change_state=False)
+        if not published:
+            # was not published, escape
+            return
+        
         # clean moderation log
         self.pagemoderatorstate_set.all().delete()
-        
-        # can be this page published?
-        if self.mptt_can_publish():
-            self.moderator_state = Page.MODERATOR_APPROVED
-        else:
-            self.moderator_state = Page.MODERATOR_APPROVED_WAITING_FOR_PARENTS
-        
-        self.save(change_state=False)
-        
-        if not fields:
-            public = self.public
-            if public:
-                if public.tree_id != self.tree_id: #moved over trees
-                    tree_ids = [self.tree_id, public.tree_id]
-                else:
-                    tree_ids = [self.tree_id]
-                
-                dirty = False
-                if self.lft != public.lft or self.rght != public.rght or self.level != public.level:#moved in tree
-                    dirty = True
-                if dirty or len(tree_ids) == 2:
-                    pages = list(Page.objects.filter(tree_id__in=tree_ids).order_by("tree_id", "level", "lft"))
-                    fields = []
-                    names = ["lft","rght","tree_id", "level", "parent", "created_by", "changed_by", "site"]
-                    for field in self._meta.fields:
-                        if field.name in names:
-                            fields.append(field)
-                    ids = []
-                    for page in pages:
-                        if page.pk != self.pk:
-                            page.publish(fields=fields)
-                            ids.append(page.pk)
-                    from cms.models.titlemodels import Title
-                    titles = Title.objects.filter(page__in=ids)
-                    title_fields = []
-                    names = ["path"]
-                    for field in Title._meta.fields:
-                        if field.name in names:
-                            title_fields.append(field)
-                    for title in titles:
-                        title.publish(fields=title_fields)
-            else:
-                pass
-                #print "no public found"            
-        
-        # publish, but only if all parents are published!! - this will need a flag
-        try:
-            published = super(Page, self).publish(fields, exclude)
-        except MpttCantPublish:
-            return 
-        
+            
         # page was published, check if there are some childs, which are waiting
         # for publishing (because of the parent)
         publish_set = self.children.filter(moderator_state = Page.MODERATOR_APPROVED_WAITING_FOR_PARENTS)
@@ -666,6 +647,7 @@ class Page(Publisher, Mptt):
             page.publish()
         
         # fire signal after publishing is done
+        cms_signals.post_publish.send(sender=Page, instance=self)
         return published
     
     def is_public_published(self):
@@ -675,12 +657,13 @@ class Page(Publisher, Mptt):
             # if it was cached in change list, return cached value
             return self.public_published_cache
         # othervise make db lookup
-        if self.public:
-            return self.public.published
+        if self.publisher_public_id:
+            return self.publisher_public.published
         #return is_public_published(self)
         return False
         
-
+    def requires_approvement(self):
+        return self.moderator_state in (Page.MODERATOR_NEED_APPROVEMENT, Page.MODERATOR_NEED_DELETE_APPROVEMENT)
     
 if 'reversion' in settings.INSTALLED_APPS: 
     import reversion       

@@ -13,7 +13,7 @@ CACHE_BACKEND = 'locmem:///'
 
 MANAGERS = ADMINS
 
-DATABASE_ENGINE = 'mysql'       # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
+DATABASE_ENGINE = 'mysql'#'postgresql_psycopg2'       # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
 DATABASE_NAME = 'cms'           # Or path to database file if using sqlite3.
 DATABASE_USER = 'cms'           # Not used with sqlite3.
 DATABASE_PASSWORD = 'cms'       # Not used with sqlite3.
@@ -84,7 +84,7 @@ MIDDLEWARE_CLASSES = (
     'cms.middleware.user.CurrentUserMiddleware',
     'cms.middleware.page.CurrentPageMiddleware',
     'cms.middleware.multilingual.MultilingualURLMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
+    #'debug_toolbar.middleware.DebugToolbarMiddleware',
     
 )
 
@@ -106,6 +106,8 @@ INSTALLED_APPS = (
     #'tagging',
     
     'cms',
+    'publisher',
+    
     'cms.plugins.text',
     'cms.plugins.picture',
     'cms.plugins.file',
@@ -117,12 +119,11 @@ INSTALLED_APPS = (
     'mptt',
     'reversion',
     #'example.categories',
-    'debug_toolbar',
+    #'debug_toolbar',
     'south',
     # sample application
     'sampleapp',
-    'store',
-    'publisher', # post publisher
+    #'store',
 )
 
 gettext = lambda s: s
@@ -166,8 +167,8 @@ CMS_PLACEHOLDER_CONF = {
 CMS_NAVIGATION_EXTENDERS = (('example.categories.navigation.get_nodes', 'Categories'),)
 
 CMS_SOFTROOT = True
-CMS_MODERATOR = False
-CMS_PERMISSION = False
+CMS_MODERATOR = True
+CMS_PERMISSION = True
 CMS_REDIRECTS = True
 CMS_SEO_FIELDS = True
 CMS_MENU_TITLE_OVERWRITE = True
