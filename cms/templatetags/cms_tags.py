@@ -15,6 +15,17 @@ from cms.utils import get_language_from_request,\
 
 register = template.Library()
 
+def get_site_id(site):
+    if site:
+        if isinstance(site, Site):
+            site_id = site.id
+        elif isinstance(site, int):
+            site_id = site
+        else:
+            site_id = settings.SITE_ID
+    else:
+        site_id = settings.SITE_ID
+    return site_id
 
 def show_menu(context, from_level=0, to_level=100, extra_inactive=0, extra_active=100, template="cms/menu.html", next_page=None, root_id=None):
     """
@@ -23,7 +34,11 @@ def show_menu(context, from_level=0, to_level=100, extra_inactive=0, extra_activ
     to_level: is the max level rendered
     render_children: if set to True will render all not direct ascendants too
     """
-    request = context['request']
+    try:
+        # If there's an exception (500), default context_processors may not be called.
+        request = context['request']
+    except KeyError:
+        return {'template': 'cms/empty.html'}
     page_queryset = get_page_queryset(request)
     
     site = Site.objects.get_current()
@@ -77,7 +92,7 @@ def show_menu(context, from_level=0, to_level=100, extra_inactive=0, extra_activ
         root_page = None
         if root_id:
             try:
-                root_page = page_queryset.get(reverse_id=root_id)
+                root_page = page_queryset.get(reverse_id=root_id, site=site)
             except:
                 send_missing_mail(root_id, request)
         else:
@@ -92,7 +107,7 @@ def show_menu(context, from_level=0, to_level=100, extra_inactive=0, extra_activ
             if isinstance(root_page, Page):
                 root_page = page_queryset.get(pk=root_page.id)
             elif isinstance(root_page, unicode):
-                root_page = page_queryset.get(reverse_id=root_page)
+                root_page = page_queryset.get(reverse_id=root_page, site=site)
             filters['tree_id'] = root_page.tree_id
             filters['lft__gt'] = root_page.lft
             filters['rght__lt'] = root_page.rght
@@ -259,7 +274,10 @@ def show_breadcrumb(context, start_level=0, template="cms/breadcrumb.html"):
     
     page = request.current_page
     if page == "dummy":
-        context.update({'ancestors':[]})
+        context.update({
+            'ancestors': [],
+            'template': template,
+        })
         return context
     lang = get_language_from_request(request)
     if page:
@@ -330,12 +348,12 @@ def send_missing_mail(reverse_id, request):
                   settings.MANAGERS, 
                   fail_silently=True)
 
-def page_id_url(context, reverse_id, lang=None):
+def page_id_url(context, reverse_id, lang=None, site=None):
     """
     Show the url of a page with a reverse id in the right language
     This is mostly used if you want to have a static link in a template to a page
     """
-    
+    site_id = get_site_id(site)
     request = context.get('request', False)
     if not request:
         return {'content':''}
@@ -345,11 +363,11 @@ def page_id_url(context, reverse_id, lang=None):
     
     if lang is None:
         lang = get_language_from_request(request)
-    key = 'page_id_url_pid:'+str(reverse_id)+'_l:'+str(lang)+'_type:absolute_url'
+    key = 'page_id_url_pid:'+str(reverse_id)+'_l:'+str(lang)+'_site:'+str(site_id)+'_type:absolute_url'
     url = cache.get(key)
     if not url:
         try:
-            page = get_page_queryset(request).get(reverse_id=reverse_id)
+            page = get_page_queryset(request).get(reverse_id=reverse_id,site=site_id)
             url = page.get_absolute_url(language=lang)
             cache.set(key, url, settings.CMS_CONTENT_CACHE_DURATION)
         except:
@@ -402,7 +420,7 @@ def language_chooser(context, template="cms/language_chooser.html"):
 language_chooser = register.inclusion_tag('cms/dummy.html', takes_context=True)(language_chooser)
 
 def do_placeholder(parser, token):
-    error_string = '%r tag requires three arguments' % token.contents[0]
+    error_string = '%r tag requires at least 1 and accepts at most 2 arguments' % token.contents[0]
     try:
         # split_contents() knows not to split quoted strings.
         bits = token.split_contents()
@@ -412,7 +430,7 @@ def do_placeholder(parser, token):
         #tag_name, name
         return PlaceholderNode(bits[1])
     elif len(bits) == 3:
-        #tag_name, name, widget
+        #tag_name, name, theme
         return PlaceholderNode(bits[1], bits[2])
     else:
         raise template.TemplateSyntaxError(error_string)
@@ -424,20 +442,12 @@ class PlaceholderNode(template.Node):
     eg: {% placeholder content-type-name page-object widget-name %}
     
     Keyword arguments:
-    content-type-name -- the content type you want to show/create
-    page-object -- the page object
-    widget-name -- the widget name you want into the admin interface. Take
-        a look into pages.admin.widgets to see which widgets are available.
+    name -- the name of the placeholder
+    theme -- additional theme attribute string which gets added to the context
     """
-    def __init__(self, name, plugins=None):
+    def __init__(self, name, theme=None):
         self.name = "".join(name.lower().split('"'))
-        name = "".join(name.split('"'))
-        print name
-        if plugins:
-            self.plugins = plugins
-        else:
-            self.plugins = []
-        
+        self.theme = theme
 
     def render(self, context):
         if not 'request' in context:
@@ -452,6 +462,9 @@ class PlaceholderNode(template.Node):
         if settings.CMS_PLACEHOLDER_CONF and self.name in settings.CMS_PLACEHOLDER_CONF:
             if "extra_context" in settings.CMS_PLACEHOLDER_CONF[self.name]:
                 context.update(settings.CMS_PLACEHOLDER_CONF[self.name]["extra_context"])
+        if self.theme:
+            # this may overwrite previously defined key [theme] from settings.CMS_PLACEHOLDER_CONF
+            context.update({'theme': self.theme,})
         c = ""
         for plugin in plugins:
             c += plugin.render_plugin(context, self.name)
@@ -522,22 +535,23 @@ def clean_admin_list_filter(cl, spec):
 clean_admin_list_filter = register.inclusion_tag('admin/filter.html')(clean_admin_list_filter)
 
 
-def show_placeholder_by_id(context, placeholder_name, reverse_id, lang=None):
+def show_placeholder_by_id(context, placeholder_name, reverse_id, lang=None, site=None):
     """
     Show the content of a page with a placeholder name and a reverse id in the right language
     This is mostly used if you want to have static content in a template of a page (like a footer)
     """
     request = context.get('request', False)
+    site_id = get_site_id(site)
     
     if not request:
         return {'content':''}
     if lang is None:
         lang = get_language_from_request(request)
-    key = 'show_placeholder_by_id_pid:'+reverse_id+'placeholder:'+placeholder_name+'_l:'+str(lang)
+    key = 'show_placeholder_by_id_pid:'+reverse_id+'_placeholder:'+placeholder_name+'_site:'+str(site_id)+'_l:'+str(lang)
     content = cache.get(key)
     if not content:
         try:
-            page = get_page_queryset(request).get(reverse_id=reverse_id)
+            page = get_page_queryset(request).get(reverse_id=reverse_id, site=site_id)
         except:
             if settings.DEBUG:
                 raise
@@ -550,7 +564,7 @@ def show_placeholder_by_id(context, placeholder_name, reverse_id, lang=None):
                           settings.DEFAULT_FROM_EMAIL,
                           settings.MANAGERS,
                           fail_silently=True)
-
+                return {'content':''}
         plugins = get_cmsplugin_queryset(request).filter(page=page, language=lang, placeholder__iexact=placeholder_name, parent__isnull=True).order_by('position').select_related()
         content = ""
         for plugin in plugins:

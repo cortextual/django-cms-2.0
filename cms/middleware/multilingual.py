@@ -18,13 +18,13 @@ SUB2 = re.compile(ur'<form([^>]+)action="/(?!(%s|%s|%s))([^"]*)"([^>]*)>' % (
 class MultilingualURLMiddleware:
     def get_language_from_request (self,request):
         supported = dict(settings.LANGUAGES)
-        lang = settings.LANGUAGE_CODE[:2]
+        lang = settings.LANGUAGE_CODE
         langs = "|".join(map(lambda l: l[0], settings.LANGUAGES))
         check = re.match(r"^/(%s)/.*" % langs, request.path_info)
         changed = False
         if check is not None:
-            request.path = request.path[3:]
-            request.path_info = request.path_info[3:]
+            request.path = "/" + "/".join(request.path.split("/")[2:])
+            request.path_info = "/" + "/".join(request.path_info.split("/")[2:]) 
             t = check.group(1)
             if t in supported:
                 lang = t
@@ -51,9 +51,10 @@ class MultilingualURLMiddleware:
     def process_request(self, request):
         language = self.get_language_from_request(request)
         if language is None:
-            language = settings.LANGUAGE_CODE[:2]
+            language = settings.LANGUAGE_CODE
         translation.activate(language)
         request.LANGUAGE_CODE = translation.get_language()
+        
         
     def process_response(self, request, response):
         patch_vary_headers(response, ("Accept-Language",))

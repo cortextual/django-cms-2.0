@@ -1,36 +1,21 @@
 
 from south.db import db
 from django.db import models
-from cms.plugins.flash.models import *
+from cms.plugins.picture.models import *
 
 class Migration:
     
     def forwards(self, orm):
         
-        # Deleting field 'Flash.public'
-        db.delete_column('cmsplugin_flash', 'public_id')
+        # Adding field 'Picture.longdesc'
+        db.add_column('cmsplugin_picture', 'longdesc', orm['picture.picture:longdesc'])
         
-        # Deleting model 'flashpublic'
-        db.delete_table('cmsplugin_flashpublic')
-        
-    
     
     def backwards(self, orm):
         
-        # Adding field 'Flash.public'
-        db.add_column('cmsplugin_flash', 'public', orm['flash.flash:public'])
+        # Deleting field 'Picture.page_link'
+        db.delete_column('cmsplugin_picture', 'longdesc')
         
-        # Adding model 'flashpublic'
-        db.create_table('cmsplugin_flashpublic', (
-            ('width', orm['flash.flash:width']),
-            ('mark_delete', orm['flash.flash:mark_delete']),
-            ('height', orm['flash.flash:height']),
-            ('cmspluginpublic_ptr', orm['flash.flash:cmspluginpublic_ptr']),
-            ('file', orm['flash.flash:file']),
-        ))
-        db.send_create_signal('flash', ['flashpublic'])
-        
-    
     
     models = {
         'cms.cmsplugin': {
@@ -51,7 +36,7 @@ class Migration:
             'tree_id': ('models.PositiveIntegerField', [], {'db_index': 'True'})
         },
         'cms.cmspluginpublic': {
-            'creation_date': ('models.DateTimeField', [], {'default': 'datetime.datetime(2009, 7, 2, 6, 24, 9, 432733)'}),
+            'creation_date': ('models.DateTimeField', [], {'default': 'datetime.datetime(2009, 7, 6, 6, 4, 30, 141247)'}),
             'id': ('models.AutoField', [], {'primary_key': 'True'}),
             'language': ('models.CharField', [], {'max_length': '5', 'db_index': 'True'}),
             'level': ('models.PositiveIntegerField', [], {'db_index': 'True'}),
@@ -93,7 +78,7 @@ class Migration:
         'cms.pagepublic': {
             'changed_by': ('models.CharField', [], {'max_length': '70'}),
             'created_by': ('models.CharField', [], {'max_length': '70'}),
-            'creation_date': ('models.DateTimeField', [], {'default': 'datetime.datetime(2009, 7, 2, 6, 24, 9, 814842)'}),
+            'creation_date': ('models.DateTimeField', [], {'default': 'datetime.datetime(2009, 7, 6, 6, 4, 28, 442937)'}),
             'id': ('models.AutoField', [], {'primary_key': 'True'}),
             'in_navigation': ('models.BooleanField', [], {'default': 'True', 'blank': 'True', 'db_index': 'True'}),
             'level': ('models.PositiveIntegerField', [], {'db_index': 'True'}),
@@ -113,19 +98,25 @@ class Migration:
             'template': ('models.CharField', [], {'max_length': '100'}),
             'tree_id': ('models.PositiveIntegerField', [], {'db_index': 'True'})
         },
-        'flash.flash': {
-            'Meta': {'db_table': "'cmsplugin_flash'"},
+        'picture.picture': {
+            'Meta': {'db_table': "'cmsplugin_picture'"},
+            'alt': ('models.CharField', [], {'max_length': '255', 'null': 'True', 'blank': 'True'}),
             'cmsplugin_ptr': ('models.OneToOneField', [], {'to': "orm['cms.CMSPlugin']", 'unique': 'True', 'primary_key': 'True'}),
-            'file': ('models.FileField', [], {'max_length': '100'}),
-            'height': ('models.CharField', [], {'max_length': '6'}),
-            'width': ('models.CharField', [], {'max_length': '6'})
+            'float': ('models.CharField', [], {'max_length': '10', 'null': 'True', 'blank': 'True'}),
+            'longdesc': ('models.CharField', [], {'max_length': '255', 'blank': 'True'}),
+            'image': ('models.ImageField', [], {'max_length': '100'}),
+            'page_link': ('models.ForeignKey', [], {'to': "orm['cms.Page']", 'null': 'True', 'blank': 'True'}),
+            'url': ('models.CharField', [], {'max_length': '255', 'null': 'True', 'blank': 'True'})
         },
-        'flash.flashpublic': {
+        'picture.picturepublic': {
+            'alt': 'models.CharField(max_length=255, null=True, blank=True)',
             'cmspluginpublic_ptr': "models.OneToOneField(to=orm['cms.CMSPluginPublic'], unique=True, primary_key=True)",
-            'file': 'models.FileField(max_length=100)',
-            'height': 'models.CharField(max_length=6)',
+            'float': 'models.CharField(max_length=10, null=True, blank=True)',
+            'longdesc': ('models.CharField', [], {'max_length': '255', 'blank': 'True'}),
+            'image': 'models.ImageField(max_length=100)',
             'mark_delete': 'models.BooleanField(default=False, blank=True)',
-            'width': 'models.CharField(max_length=6)'
+            'page_link': "models.ForeignKey(to=orm['cms.PagePublic'], null=True, blank=True)",
+            'url': 'models.CharField(max_length=255, null=True, blank=True)'
         },
         'sites.site': {
             'Meta': {'db_table': "'django_site'"},
@@ -135,4 +126,4 @@ class Migration:
         }
     }
     
-    complete_apps = ['flash']
+    complete_apps = ['picture']
